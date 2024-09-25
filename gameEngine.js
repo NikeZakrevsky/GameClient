@@ -5,27 +5,37 @@ class GameEngine {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
         this.player = new Player(100, 100, 'player.png', this.canvas.width, this.canvas.height);
+        this.otherPlayers = {};
         this.keys = {};
         this.bindEvents();
 
-        this.userId = Date.now()
-        // Создаем WebSocket соединение
-        this.socket = new WebSocket(serverUrl);
-        this.socket.onopen = () => {
-            console.log('WebSocket connection established');
-            this.isConnected = true; // устанавливаем флаг соединения
-            this.sendNewPlayerMessage();
-        };
-        this.socket.onmessage = (event) => {
-            console.log('Message from server:', event.data);
-        };
-        this.socket.onclose = () => {
-            console.log('WebSocket connection closed');
-            this.isConnected = false; // обновляем флаг соединения
+        this.userId = this.uuidv4();
+        this.senderWorker = new Worker('senderWorker.js');
+        this.senderWorker.postMessage({ type: 'init', serverUrl });
+
+        this.sendNewPlayerMessage();
+
+        this.senderWorker.onmessage = (event) => {
+            const { type, data } = event.data;
+            if (type === 'serverMessage') {
+                this.handleServerMessage(JSON.parse(data));
+            }
         };
 
-        this.lastPosition = { x: this.player.x, y: this.player.y }; // хранение последней позиции
+        this.startPositionSending();
         this.gameLoop();
+    }
+
+    uuidv4() {
+        return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+          (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> +c / 4).toString(16)
+        );
+    }
+
+    startPositionSending() {
+        setInterval(() => {
+            this.sendPosition();
+        }, 16); // Отправляем координаты каждые 50 мс
     }
 
     bindEvents() {
@@ -38,59 +48,92 @@ class GameEngine {
         });
     }
 
+    updateOtherPlayers(players) {
+        players.forEach(playerData => {
+            if (playerData.playerId !== this.userId) {
+                if (!this.otherPlayers[playerData.playerId]) {
+                    this.otherPlayers[playerData.playerId] = {
+                        player: new Player(playerData.x, playerData.y, 'player.png', this.canvas.width, this.canvas.height),
+                        previousPosition: { x: playerData.x, y: playerData.y },
+                        targetPosition: { x: playerData.x, y: playerData.y },
+                        interpolationTime: 0
+                    };
+                } else {
+                    const otherPlayer = this.otherPlayers[playerData.playerId];
+                    otherPlayer.previousPosition = { ...otherPlayer.targetPosition };
+                    otherPlayer.targetPosition = { x: playerData.x, y: playerData.y };
+                    otherPlayer.interpolationTime = 0;
+                }
+            }
+        });
+    }
+
+    interpolatePlayer(otherPlayer) {
+        const t = Math.min(otherPlayer.interpolationTime / 150, 1); // Интерполяция между предыдущей и целевой позицией
+        otherPlayer.player.x = otherPlayer.previousPosition.x + t * (otherPlayer.targetPosition.x - otherPlayer.previousPosition.x);
+        otherPlayer.player.y = otherPlayer.previousPosition.y + t * (otherPlayer.targetPosition.y - otherPlayer.previousPosition.y);
+        otherPlayer.interpolationTime += 16; // Ожидаем, что requestAnimationFrame работает примерно с частотой 60fps (16 мс на кадр)
+    }
+
     update() {
         let dx = 0;
         let dy = 0;
 
-        // Обработка нажатых клавиш
         if (this.keys['ArrowUp'] || this.keys['KeyW']) {
-            dy = -1; // движение вверх
+            dy = -1;
         }
         if (this.keys['ArrowDown'] || this.keys['KeyS']) {
-            dy = 1; // движение вниз
+            dy = 1;
         }
         if (this.keys['ArrowLeft'] || this.keys['KeyA']) {
-            dx = -1; // движение влево
+            dx = -1;
         }
         if (this.keys['ArrowRight'] || this.keys['KeyD']) {
-            dx = 1; // движение вправо
+            dx = 1;
         }
 
-        // Обновляем позицию игрока
         this.player.move(dx, dy);
 
-        // Отправляем новые координаты на сервер, если они изменились
-        this.sendPosition();
+        // Обновляем позиции других игроков
+        Object.values(this.otherPlayers).forEach(otherPlayer => {
+            this.interpolatePlayer(otherPlayer);
+        });
     }
 
     sendPosition() {
         const currentPosition = { x: this.player.x, y: this.player.y };
 
-        // Проверяем, изменились ли координаты
-        if (this.isConnected && 
-            (currentPosition.x !== this.lastPosition.x || currentPosition.y !== this.lastPosition.y)) {
-            this.socket.send(`MOVE;id:${this.userId},x:${currentPosition.x},y:${currentPosition.y}`); // отправляем координаты в формате JSON
-            this.lastPosition = currentPosition; // обновляем последнюю позицию
-        }
+        // Отправляем координаты в воркер
+        this.senderWorker.postMessage({
+            type: 'send',
+            message: `MOVE;id:${this.userId};x:${currentPosition.x},y:${currentPosition.y}`
+        });
     }
 
     draw() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); // очищаем канвас
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.player.draw(this.ctx);
+        Object.values(this.otherPlayers).forEach(otherPlayer => {
+            otherPlayer.player.draw(this.ctx);
+        });
     }
 
     gameLoop() {
         this.update();
         this.draw();
-        requestAnimationFrame(() => this.gameLoop()); // продолжаем цикл
+        requestAnimationFrame(() => this.gameLoop());
     }
 
     sendNewPlayerMessage() {
-        if (this.isConnected) {
-            this.socket.send(`NEW_PLAYER;id:${this.userId}`); // отправляем сообщение о новом игроке
+        this.senderWorker.postMessage({ type: 'send', message: `NEW_PLAYER;id:${this.userId}` });
+    }
+
+    handleServerMessage(data) {
+        if (data.type === 'PLAYER_LIST') {
+            this.updateOtherPlayers(data.players);
         }
     }
 }
 
 // Инициализация игры
-const gameEngine = new GameEngine('gameCanvas', 'ws://localhost:8080'); // замените на URL вашего WebSocket сервера
+const gameEngine = new GameEngine('gameCanvas', 'ws://localhost:8080');
