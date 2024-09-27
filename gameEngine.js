@@ -4,6 +4,7 @@ class GameEngine {
     constructor(canvasId, serverUrl) {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
+        
         this.player = new Player(100, 100, 'player.png', this.canvas.width, this.canvas.height);
         this.otherPlayers = {};
         this.keys = {};
