@@ -137,4 +137,4 @@ class GameEngine {
 }
 
 // Инициализация игры
-const gameEngine = new GameEngine('gameCanvas', 'ws://localhost:8080');
+const gameEngine = new GameEngine('gameCanvas', 'ws://103.13.211.120:8080');
