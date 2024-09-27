@@ -19,8 +19,9 @@ onmessage = (event) => {
             postMessage({ type: 'serverMessage', data: event.data });
         };
 
-        socket.onclose = () => {
-            console.log('WebSocket (Worker) connection closed');
+        socket.onclose = (event) => {
+            console.log(`WebSocket (Worker) connection closed (code: ${event.code}, reason: ${event.reason})`);
+            // Optionally, try to reconnect after a delay
         };
     }
 

@@ -50,6 +50,7 @@ class GameEngine {
     }
 
     updateOtherPlayers(players) {
+        this.otherPlayers = []
         players.forEach(playerData => {
             if (playerData.playerId !== this.userId) {
                 if (!this.otherPlayers[playerData.playerId]) {
