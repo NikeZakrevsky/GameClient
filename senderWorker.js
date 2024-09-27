@@ -23,6 +23,10 @@ onmessage = (event) => {
             console.log(`WebSocket (Worker) connection closed (code: ${event.code}, reason: ${event.reason})`);
             // Optionally, try to reconnect after a delay
         };
+        
+        socket.onerror = (error) => {
+            console.error('WebSocket (Worker) error:', error);
+        };
     }
 
     if (type === 'send') {
