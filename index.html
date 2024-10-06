@@ -1,35 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Game</title>
+<!doctype html>
+<html>
+  <head>
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.2/dist/pixi.min.js"></script>
+    
     <style>
-        canvas {
-            border: 1px solid black;
-        }
+      html, body {
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+      }
     </style>
-</head>
-<body>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-
-    <div>
-        <label>
-            <input type="checkbox" id="interpolationCheckbox" checked>
-            Enable Interpolation
-        </label>
-    </div>
-
-    <div>
-        <label for="interpolationSlider">Interpolation Speed: <span id="interpolationSliderValue">0.01</span></label>
-        <input type="range" id="interpolationSlider" min="0" max="1" step="0.01" value="0.01">
-    </div>
-
-    <div>
-        <label for="updateRateMsSlider">Interpolation Speed: <span id="updateRateMsSliderValue">50</span></label>
-        <input type="range" id="updateRateMsSlider" min="10" max="1000" step="10" value="50">
-    </div>
-
-    <script type="module" src="gameEngine.js"></script>
-</body>
+  </head>
+  <body>
+    <script type="module" src="game.js">
+    </script>
+  </body>
 </html>
