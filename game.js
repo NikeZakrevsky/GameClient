@@ -1,3 +1,5 @@
+import { v4 as uuidv4 } from 'https://cdn.jsdelivr.net/npm/uuid@10.0.0/+esm';
+
 const app = new PIXI.Application({ background: "#2e313d", resizeTo: window });
 document.body.appendChild(app.view);
 
@@ -369,11 +371,5 @@ function rectanglesIntersect(rect1, rect2) {
         rect1.x + rect1.width > rect2.x &&
         rect1.y < rect2.y + rect2.height &&
         rect1.y + rect1.height > rect2.y
-    );
-}
-
-function uuidv4() {
-    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
-      (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> +c / 4).toString(16)
     );
 }
