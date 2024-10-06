@@ -1,9 +1,11 @@
 import { v4 as uuidv4 } from 'https://cdn.jsdelivr.net/npm/uuid@10.0.0/+esm';
+import { loadAssets } from './assets/assetLoader.js';
+import { bowTexture, bowAltTexture, shadowTexture, treeTexture } from '../assets/assetLoader.js';
+import { createPlayerContainer, updatePlayerSprite, updatePlayerPosition } from './game/player.js';
+import { updateBullets } from './game/bullet.js'
 
 const app = new PIXI.Application({ background: "#2e313d", resizeTo: window });
 document.body.appendChild(app.view);
-
-let bowTexture, bowAltTexture, shadowTexture, arrowTexture, bodyTexture, treeTexture;
 
 await loadAssets();
 
@@ -11,7 +13,6 @@ const serverUrl = 'ws://localhost:8080'
 const userId = uuidv4();
 const playerSprites = {};
 const keys = {};
-const bullets = {};
 const radius = 10;
 const obstacles = [];
 
@@ -31,20 +32,7 @@ senderWorker.onmessage = handleWorkerMessage;
 setupKeyboardListeners(keys);
 setupMouseMovement(playerContainer);
 
-app.ticker.add(() => updatePlayerPosition(keys, mapContainer, playerContainer, obstacles));
-
-async function loadAssets() {
-    await PIXI.Assets.load(
-        ['images/player.png', 'images/arrow.png', 'images/shadow.png', 'images/bow.png', 'images/bow_alt.png', 'images/tree.png']
-    );
-
-    bowTexture = PIXI.Texture.from('images/bow.png');
-    bowAltTexture = PIXI.Texture.from('images/bow_alt.png');
-    shadowTexture = PIXI.Texture.from('images/shadow.png');
-    arrowTexture = PIXI.Texture.from('images/arrow.png');
-    bodyTexture = PIXI.Texture.from('images/player.png')
-    treeTexture = PIXI.Texture.from('images/tree.png')
-}
+app.ticker.add(() => updatePlayerPosition(keys, mapContainer, playerContainer, obstacles, app));
 
 function handleWorkerMessage(event) {
     const { type, data } = event.data;
@@ -54,7 +42,7 @@ function handleWorkerMessage(event) {
         switch (parsedData.type) {
             case 'PLAYER_LIST':
                 updateOtherPlayers(parsedData.players);
-                updateBullets(parsedData.players);
+                updateBullets(parsedData.players, mapContainer, obstacles);
                 break;
             case 'MAP':
                 createMap(parsedData.trees);
@@ -64,60 +52,6 @@ function handleWorkerMessage(event) {
 }
 
 sendNewPlayerMessage();
-
-function updateBullets(players) {
-    players.forEach(player => {
-        if (!player.bullets || player.bullets.length === 0) {
-            if (bullets[player.playerId]) {
-                bullets[player.playerId].forEach(bullet => mapContainer.removeChild(bullet));
-                delete bullets[player.playerId];
-            }
-            return;
-        }
-
-        if (!bullets[player.playerId]) {
-            bullets[player.playerId] = [];
-        }
-
-        player.bullets.forEach((bulletData, index) => {
-            let bulletSprite = bullets[player.playerId][index];
-
-
-            if (!bulletSprite) {
-                bulletSprite = new PIXI.Sprite(arrowTexture);
-                bulletSprite.anchor.set(0.5, 0.5); 
-                bulletSprite.scale.set(0.7);
-                mapContainer.addChild(bulletSprite);
-                bullets[player.playerId][index] = bulletSprite;
-            }
-
-
-            bulletSprite.x = bulletData.x;
-            bulletSprite.y = bulletData.y;
-            bulletSprite.rotation = bulletData.angle;
-
-
-            if (bulletOutOfBounds(bulletData) || bulletHitObstacle(bulletData)) {
-                mapContainer.removeChild(bulletSprite);
-                bullets[player.playerId].splice(index, 1);
-            }
-        });
-    });
-}
-
-function bulletOutOfBounds(bulletData) {
-    return bulletData.x < 0 || bulletData.x > 2000 || bulletData.y < 0 || bulletData.y > 2000;
-}
-
-function bulletHitObstacle(bulletData) {
-    for (const obstacle of obstacles) {
-        const bulletBounds = new PIXI.Rectangle(bulletData.x, bulletData.y, 10, 10);
-        if (rectanglesIntersect(bulletBounds, obstacle)) {
-            return true;
-        }
-    }
-    return false;
-}
 
 function updateOtherPlayers(players) {
     players.forEach(player => {
@@ -131,25 +65,6 @@ function updateOtherPlayers(players) {
             updatePlayerSprite(otherPlayerContainer, player);
         }
     });
-}
-
-function updatePlayerSprite(playerContainer, player) {
-    const bow = playerContainer.children[2];
-    const arrow = playerContainer.children[3];
-
-    playerContainer.x = player.x;
-    playerContainer.y = player.y;
-
-    bow.x = Math.cos(player.lookDirection) * radius;
-    bow.y = Math.sin(player.lookDirection) * radius;
-    bow.rotation = player.lookDirection;
-
-    arrow.x = bow.x + Math.cos(player.lookDirection);
-    arrow.y = bow.y + Math.sin(player.lookDirection);
-    arrow.rotation = player.lookDirection;
-
-    const body = playerContainer.children[1];
-    body.scale.x = (player.lookDirection < Math.PI / 2 && player.lookDirection > -Math.PI / 2) ? 1.3 : -1.3;
 }
 
 function createTreeSprite(data) {
@@ -222,33 +137,6 @@ function sendNewPlayerMessage() {
         type: 'send',
         message: JSON.stringify(message)
     });
-}
-
-function createPlayerContainer() {
-    const playerContainer = new PIXI.Container();
-
-    const body = new PIXI.Sprite(bodyTexture);
-    const bow = new PIXI.Sprite(bowTexture);
-    const arrow = new PIXI.Sprite(arrowTexture);
-    const shadow = new PIXI.Sprite(shadowTexture);
-
-    shadow.anchor.set(0.5, 0.5);
-    bow.anchor.set(0, 0.5);
-    arrow.anchor.set(0, 1);
-    body.anchor.set(0.5, 0.5);
-
-    body.scale.set(1.3);
-    bow.scale.set(0.9);
-    arrow.scale.set(0.9);
-
-    shadow.y = body.height / 2;
-    bow.x += 10;
-    arrow.x += 10;
-    shadow.alpha = 0.5;
-
-    playerContainer.addChild(shadow, body, bow, arrow);
-
-    return playerContainer
 }
 
 function setupKeyboardListeners() {
@@ -325,51 +213,3 @@ function shootArrow() {
 
 //     moveArrow();
 // }
-
-function updatePlayerPosition(keys, mapContainer, playerContainer, obstacles) {
-    const speed = 5;
-    const bobAmount = 1.5;
-    const bobSpeed = 0.04;
-    const originalY = app.renderer.height / 2;
-
-    let moveX = 0, moveY = 0, isMoving = false;
-
-    if (keys['w']) { moveY += speed; isMoving = true; }
-    if (keys['s']) { moveY -= speed; isMoving = true; }
-    if (keys['a']) { moveX += speed; isMoving = true; }
-    if (keys['d']) { moveX -= speed; isMoving = true; }
-
-    const newMapX = mapContainer.x + moveX;
-    const newMapY = mapContainer.y + moveY;
-
-    const playerTranslated = { x: playerContainer.x - newMapX, y: playerContainer.y - newMapY };
-
-    if (!checkCollision(playerTranslated) && !borderCollision(playerTranslated)) {
-        mapContainer.x = newMapX;
-        mapContainer.y = newMapY;
-
-        if (isMoving) {
-            playerContainer.y = originalY + Math.sin(app.ticker.lastTime * bobSpeed) * bobAmount;
-        } else {
-            playerContainer.y = originalY;
-        }
-    }
-}
-
-function borderCollision(position) {
-    return position.x < 0 || position.x > 2000 || position.y < 0 || position.y > 2000;
-}
-
-function checkCollision(position) {
-    const playerBounds = new PIXI.Rectangle(position.x, position.y, playerContainer.width, playerContainer.height);
-    return obstacles.some(obstacle => rectanglesIntersect(playerBounds, obstacle));
-}
-
-function rectanglesIntersect(rect1, rect2) {
-    return (
-        rect1.x < rect2.x + rect2.width &&
-        rect1.x + rect1.width > rect2.x &&
-        rect1.y < rect2.y + rect2.height &&
-        rect1.y + rect1.height > rect2.y
-    );
-}
